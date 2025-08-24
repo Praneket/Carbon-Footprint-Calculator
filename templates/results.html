@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Carbon Footprint Result</title>
+</head>
+<body class="container mt-5">
+    <h2>Your Total Carbon Footprint:</h2>
+    <h3>{{ total }} kg CO₂e/month</h3>
+    
+    <h4>Eco-Friendly Tips:</h4>
+    <ul>
+        {% for tip in tips %}
+        <li>{{ tip }}</li>
+        {% endfor %}
+    </ul>
+    
+    <a href="/">Back</a>
+</body>
+</html>
