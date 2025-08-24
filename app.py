@@ -1,20 +1,14 @@
 from flask import Flask, request, jsonify, render_template
 import psycopg2
+import os
 
 app = Flask(__name__)
 
-DB_HOST = "localhost"
-DB_NAME = "carbon_calculator"
-DB_USER = "postgres"
-DB_PASS = "12345"  # change to your password
+# Use environment variables (Render will provide DATABASE_URL)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    return psycopg2.connect(
-        host=DB_HOST,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASS
-    )
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def calculate_footprint(electricity_kwh, fuel_liters, waste_kg):
     elec_factor = 0.82
@@ -78,4 +72,6 @@ def get_data():
     return jsonify(rows)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Render expects the port to come from $PORT
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
