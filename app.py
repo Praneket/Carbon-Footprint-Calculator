@@ -7,6 +7,9 @@ from utils.tips import generate_tips
 app = Flask(__name__)
 DB = os.path.join("data", "carbon_data.db")
 
+# Ensure data dir + DB table exist at import time (works with gunicorn)
+os.makedirs("data", exist_ok=True)
+
 
 def get_db():
     conn = sqlite3.connect(DB)
@@ -39,9 +42,11 @@ def init_db():
     with get_db() as conn:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(emissions)")}
         if not REQUIRED_COLS.issubset(existing):
-            # Schema is stale — drop and recreate (old data had wrong columns anyway)
             conn.execute("DROP TABLE IF EXISTS emissions")
             conn.execute(CREATE_SQL)
+
+# Called at module load so gunicorn workers initialise the DB too
+init_db()
 
 
 @app.route("/")
@@ -78,8 +83,9 @@ def calculate_route():
         return render_template("results.html", result=result, tips=tips,
                                name=data.get("name", "Anonymous"),
                                data=json.dumps(result))
-    except (ValueError, KeyError) as e:
-        return render_template("index.html", error=f"Invalid input: {e}")
+    except Exception as e:
+        app.logger.error(f"calculate error: {e}")
+        return render_template("index.html", error=f"Something went wrong: {e}")
 
 
 @app.route("/history")
@@ -187,7 +193,5 @@ def download_pdf():
 
 
 if __name__ == "__main__":
-    os.makedirs("data", exist_ok=True)
-    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, host="0.0.0.0", port=port)
