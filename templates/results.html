@@ -1,19 +1,357 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-theme="light">
 <head>
-    <title>Carbon Footprint Result</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your Carbon Report — EcoTrack</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <link rel="icon" type="image/webp" href="{{ url_for('static', filename='OIP.webp') }}" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
-<body class="container mt-5">
-    <h2>Your Total Carbon Footprint:</h2>
-    <h3>{{ total }} kg CO₂e/month</h3>
-    
-    <h4>Eco-Friendly Tips:</h4>
-    <ul>
+<body>
+
+<canvas id="particle-canvas"></canvas>
+
+<nav class="navbar navbar-expand-lg sticky-top">
+  <div class="container">
+    <a class="navbar-brand" href="/">
+      <i class="bi bi-leaf-fill text-success me-2 animate-float d-inline-block"></i>EcoTrack
+    </a>
+    <div class="ms-auto d-flex gap-2">
+      <a href="/history/page" class="btn btn-outline-eco btn-sm">
+        <i class="bi bi-clock-history me-1"></i>History
+      </a>
+      <button id="themeToggle" class="btn-theme btn">
+        <i class="bi bi-moon-fill"></i>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="container py-5" style="position:relative;z-index:1;">
+
+  <!-- Header -->
+  <div class="text-center mb-5 reveal">
+    <div class="hero-badge">🌍 YOUR SUSTAINABILITY REPORT</div>
+    <h2 class="mt-3 animate-glow">Hi, {{ name }}!</h2>
+    <p style="color:var(--text-sub);">Here's your estimated annual carbon footprint based on your lifestyle.</p>
+  </div>
+
+  <!-- Total + Score -->
+  <div class="row g-4 mb-4 justify-content-center">
+    <div class="col-md-4 reveal delay-1">
+      <div class="card stat-card text-center h-100">
+        <div class="card-body py-4">
+          <div class="stat-label mb-2">Total Annual Emissions</div>
+          <div class="stat-number display-4 animate-count" id="totalNum">{{ result.total }}</div>
+          <div class="stat-label mt-1">kg CO₂ / year</div>
+
+          <!-- Score badge -->
+          <div class="mt-3">
+            {% if result.score == 'Low' %}
+              <span style="background:rgba(34,197,94,0.15);color:#22c55e;border:1px solid #22c55e;border-radius:20px;padding:6px 18px;font-family:'Orbitron',sans-serif;font-size:0.78rem;letter-spacing:0.1em;">
+                ● LOW FOOTPRINT
+              </span>
+            {% elif result.score == 'Medium' %}
+              <span style="background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;border-radius:20px;padding:6px 18px;font-family:'Orbitron',sans-serif;font-size:0.78rem;letter-spacing:0.1em;">
+                ● MEDIUM FOOTPRINT
+              </span>
+            {% else %}
+              <span style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef4444;border-radius:20px;padding:6px 18px;font-family:'Orbitron',sans-serif;font-size:0.78rem;letter-spacing:0.1em;">
+                ● HIGH FOOTPRINT
+              </span>
+            {% endif %}
+          </div>
+
+          <!-- Eco meter -->
+          {% set pct = [((result.total / 10000) * 100) | int, 100] | min %}
+          <div class="eco-meter mt-3">
+            <div class="eco-meter-fill" id="meterFill" style="width:0%"
+                 data-target="{{ pct }}"></div>
+          </div>
+          <div class="mt-1" style="font-size:0.75rem;color:var(--muted);">
+            {{ result.total }} / 10,000 kg CO₂ scale
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category cards -->
+    {% for cat, icon, col in [
+      ('transport','car-front-fill','#60a5fa'),
+      ('energy','lightning-charge-fill','#fbbf24'),
+      ('food','egg-fried','#f87171'),
+      ('waste','trash3-fill','#94a3b8')
+    ] %}
+    <div class="col-6 col-md-2 reveal delay-{{ loop.index + 1 }}">
+      <div class="card stat-card text-center h-100">
+        <div class="card-body py-3">
+          <i class="bi bi-{{ icon }} fs-2" style="color:{{ col }};filter:drop-shadow(0 0 6px {{ col }}88);"></i>
+          <div class="stat-number mt-2" style="font-size:1.3rem;">{{ result[cat] }}</div>
+          <div class="stat-label">kg CO₂</div>
+          <div class="stat-cat mt-1">{{ cat }}</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Charts -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-5 reveal-left">
+      <div class="card section-card h-100">
+        <div class="card-header section-header">
+          <i class="bi bi-pie-chart-fill me-2" style="color:var(--accent2);"></i>Category Breakdown
+        </div>
+        <div class="card-body d-flex align-items-center justify-content-center">
+          <canvas id="donutChart" style="max-height:280px;"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-7 reveal-right">
+      <div class="card section-card h-100">
+        <div class="card-header section-header">
+          <i class="bi bi-bar-chart-fill me-2" style="color:var(--accent2);"></i>Your Footprint vs Averages
+        </div>
+        <div class="card-body d-flex align-items-center justify-content-center">
+          <canvas id="barChart" style="max-height:280px;"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Eco Tips -->
+  <div class="card section-card mb-4 reveal">
+    <div class="card-header section-header">
+      <i class="bi bi-lightbulb-fill me-2" style="color:#fbbf24;"></i>Personalised Eco-Tips
+    </div>
+    <div class="card-body p-0">
+      <ul class="list-group list-group-flush">
         {% for tip in tips %}
-        <li>{{ tip }}</li>
+        <li class="list-group-item tip-item reveal delay-{{ loop.index }}">
+          <i class="bi bi-check-circle-fill me-2" style="color:var(--accent2);"></i>{{ tip }}
+        </li>
         {% endfor %}
-    </ul>
-    
-    <a href="/">Back</a>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Power BI -->
+  <div class="card section-card mb-4 reveal" style="border-color:var(--accent);">
+    <div class="card-body d-flex align-items-start gap-3">
+      <i class="bi bi-bar-chart-line-fill fs-2 animate-float d-inline-block" style="color:var(--accent2);"></i>
+      <div>
+        <h6 style="font-family:'Orbitron',sans-serif;font-size:0.85rem;letter-spacing:0.08em;color:var(--text);">
+          POWER BI DASHBOARD
+        </h6>
+        <p class="mb-2" style="color:var(--muted);font-size:0.88rem;">
+          Export your data to CSV and connect to Power BI for advanced analytics.
+          File saved at <code>data/carbon_emissions.csv</code>.
+        </p>
+        <a href="/export_csv" class="btn btn-outline-eco btn-sm">
+          <i class="bi bi-download me-1"></i>Export CSV for Power BI
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="d-flex flex-wrap gap-3 justify-content-center reveal">
+    <a href="/" class="btn btn-outline-eco">
+      <i class="bi bi-arrow-left me-2"></i>Recalculate
+    </a>
+    <button class="btn btn-eco" id="pdfBtn">
+      <i class="bi bi-file-earmark-pdf-fill me-2"></i>Download PDF Report
+    </button>
+  </div>
+
+</div>
+
+<footer class="text-center py-3">🌿 EcoTrack — Carbon Footprint Calculator</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* ── Theme ── */
+const toggle = document.getElementById('themeToggle');
+const root   = document.documentElement;
+const saved  = localStorage.getItem('theme') || 'light';
+root.setAttribute('data-theme', saved);
+toggle.innerHTML = saved === 'dark' ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-fill"></i>';
+toggle.addEventListener('click', () => {
+  const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  root.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  toggle.innerHTML = next === 'dark' ? '<i class="bi bi-sun-fill"></i>' : '<i class="bi bi-moon-fill"></i>';
+  updateChartColors();
+});
+
+/* ── Scroll Reveal ── */
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal, .reveal-left, .reveal-right').forEach(el => observer.observe(el));
+
+/* ── Eco Meter animation ── */
+window.addEventListener('load', () => {
+  const fill   = document.getElementById('meterFill');
+  const target = fill.dataset.target;
+  setTimeout(() => { fill.style.width = target + '%'; }, 400);
+});
+
+/* ── Result data ── */
+const result = {{ data | safe }};
+
+/* ── Chart helpers ── */
+function isDark() { return root.getAttribute('data-theme') === 'dark'; }
+function textColor()   { return isDark() ? '#e2ffe8' : '#0f1f0f'; }
+function mutedColor()  { return isDark() ? '#6ee7a0' : '#6b7280'; }
+function gridColor()   { return isDark() ? 'rgba(26,77,46,0.6)' : 'rgba(187,247,208,0.6)'; }
+
+let donutChart, barChart;
+
+function buildCharts() {
+  const donutCtx = document.getElementById('donutChart').getContext('2d');
+  const barCtx   = document.getElementById('barChart').getContext('2d');
+
+  donutChart = new Chart(donutCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Transport', 'Energy', 'Food', 'Waste'],
+      datasets: [{
+        data: [result.transport, result.energy, result.food, result.waste],
+        backgroundColor: ['#3b82f6','#f59e0b','#ef4444','#6b7280'],
+        borderColor: isDark() ? '#0a1f10' : '#ffffff',
+        borderWidth: 3,
+        hoverOffset: 10
+      }]
+    },
+    options: {
+      cutout: '68%',
+      animation: { animateRotate: true, duration: 1200 },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: textColor(), font: { family: 'Exo 2', size: 12 }, padding: 16 }
+        }
+      }
+    }
+  });
+
+  barChart = new Chart(barCtx, {
+    type: 'bar',
+    data: {
+      labels: ['You', 'India Avg', 'Global Avg'],
+      datasets: [{
+        label: 'kg CO₂/year',
+        data: [result.total, result.national_avg, result.global_avg],
+        backgroundColor: [
+          isDark() ? 'rgba(34,197,94,0.7)'  : 'rgba(22,163,74,0.8)',
+          isDark() ? 'rgba(96,165,250,0.7)' : 'rgba(59,130,246,0.8)',
+          isDark() ? 'rgba(251,191,36,0.7)' : 'rgba(245,158,11,0.8)'
+        ],
+        borderColor: ['#22c55e','#3b82f6','#f59e0b'],
+        borderWidth: 2,
+        borderRadius: 8,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      animation: { duration: 1200 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: textColor(), font: { family: 'Exo 2' } }, grid: { color: gridColor() } },
+        y: {
+          beginAtZero: true,
+          ticks: { color: textColor(), font: { family: 'Exo 2' } },
+          grid: { color: gridColor() },
+          title: { display: true, text: 'kg CO₂/year', color: mutedColor(), font: { family: 'Exo 2' } }
+        }
+      }
+    }
+  });
+}
+
+function updateChartColors() {
+  if (!donutChart || !barChart) return;
+  donutChart.data.datasets[0].borderColor = isDark() ? '#0a1f10' : '#ffffff';
+  donutChart.options.plugins.legend.labels.color = textColor();
+  donutChart.update();
+
+  barChart.data.datasets[0].backgroundColor = [
+    isDark() ? 'rgba(34,197,94,0.7)'  : 'rgba(22,163,74,0.8)',
+    isDark() ? 'rgba(96,165,250,0.7)' : 'rgba(59,130,246,0.8)',
+    isDark() ? 'rgba(251,191,36,0.7)' : 'rgba(245,158,11,0.8)'
+  ];
+  barChart.options.scales.x.ticks.color = textColor();
+  barChart.options.scales.y.ticks.color = textColor();
+  barChart.options.scales.x.grid.color  = gridColor();
+  barChart.options.scales.y.grid.color  = gridColor();
+  barChart.options.scales.y.title.color = mutedColor();
+  barChart.update();
+}
+
+buildCharts();
+
+/* ── PDF ── */
+document.getElementById('pdfBtn').addEventListener('click', async () => {
+  const tips = [...document.querySelectorAll('.tip-item')].map(el => el.textContent.trim());
+  const res  = await fetch('/download_pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ result, tips, name: "{{ name }}" })
+  });
+  if (!res.ok) { alert('PDF generation failed. Ensure reportlab is installed.'); return; }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'carbon_report.pdf'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ── Particles ── */
+(function() {
+  const canvas = document.getElementById('particle-canvas');
+  const ctx    = canvas.getContext('2d');
+  let W, H, particles = [];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = document.body.scrollHeight;
+  }
+
+  function isDarkMode() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+
+  function Particle() {
+    this.x  = Math.random() * W;
+    this.y  = Math.random() * H;
+    this.r  = Math.random() * 2 + 0.5;
+    this.vx = (Math.random() - 0.5) * 0.4;
+    this.vy = -Math.random() * 0.5 - 0.2;
+    this.alpha = Math.random() * 0.6 + 0.2;
+  }
+
+  function init() { resize(); particles = Array.from({ length: 90 }, () => new Particle()); }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const color = isDarkMode() ? '74,222,128' : '22,163,74';
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${color},${p.alpha})`;
+      ctx.fill();
+      p.x += p.vx; p.y += p.vy;
+      if (p.y < -10) { p.y = H + 10; p.x = Math.random() * W; }
+      if (p.x < 0 || p.x > W) p.vx *= -1;
+    });
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  init(); draw();
+})();
+</script>
 </body>
 </html>
